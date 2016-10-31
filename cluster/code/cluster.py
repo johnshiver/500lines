@@ -40,6 +40,14 @@ NULL_BALLOT = Ballot(-1, -1)  # sorts before all real ballots
 NOOP_PROPOSAL = Proposal(None, None, None)  # no-op to fill otherwise empty slots
 
 class Node(object):
+    """
+    Represents a node in the network.
+
+
+    Node provides send method as convenience, using functools.partial
+    to supply arguments to the same methods of Network class.
+    """
+
     unique_ids = itertools.count()
 
     def __init__(self, network, address):
@@ -139,7 +147,12 @@ class SimTimeLogger(logging.LoggerAdapter):
                               {'network': self.extra['network']})
 
 class Role(object):
-
+    """
+    Roles are added and removed from the node as execution proceeds.
+    Messages that arrive on the node are relayed to all active
+    roles, calling a method named after the message type with a
+    do_ prefix.
+    """
     def __init__(self, node):
         self.node = node
         self.node.register(self)
@@ -155,6 +168,13 @@ class Role(object):
         self.node.unregister(self)
 
 class Acceptor(Role):
+    """
+    Stores ballot number representing its most recent promise,
+    along with set of accepted proposals for each slot.
+
+    Then, responds to Prepare and Accept messages according
+    to the protocol.
+    """
 
     def __init__(self, node):
         super(Acceptor, self).__init__(node)
@@ -173,6 +193,8 @@ class Acceptor(Role):
         if ballot_num >= self.ballot_num:
             self.ballot_num = ballot_num
             acc = self.accepted_proposals
+            # if slot not in accepted proposals
+            # or we have proposal but ballot_num is less
             if slot not in acc or acc[slot][0] < ballot_num:
                 acc[slot] = (ballot_num, proposal)
 
@@ -509,6 +531,21 @@ class Requester(Role):
         self.stop()
 
 class Member(object):
+    """
+    App creates and starts a Member object on eeach cluster member,
+    providing application-specific state machine and a list of peers.
+
+    Member object addss a bootstrap role to the node if it is joining
+    and existing cluster, or seed if it is creating a new cluster.
+
+    It then runs the protocol (via Network.run) in a separate thread.
+
+    The application interacts with the cluster through the invoke method,
+    which kicks off a proposal for a state transition. Once that proposal
+    is decided and the state machine runs, invoke returns the machine's output.
+    The method uses a simple synchronized Queue to wait for the result of the
+    protocol thread.
+    """
 
     def __init__(self, state_machine, network, peers, seed=None,
                  seed_cls=Seed, bootstrap_cls=Bootstrap):
